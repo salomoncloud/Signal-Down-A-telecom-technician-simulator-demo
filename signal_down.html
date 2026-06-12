@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGNAL DOWN — Field Tech Simulator</title>
+<style>
+  :root{
+    --bg:#0E141B;          /* NOC console slate */
+    --panel:#16202B;       /* raised panel */
+    --panel2:#1C2836;      /* hover / nested */
+    --line:#2B3A4A;        /* hairline */
+    --ink:#D7E1EA;         /* primary text */
+    --dim:#7E8FA0;         /* secondary text */
+    --amber:#FFB454;       /* alarm LED amber / hi-vis */
+    --red:#FF5C5C;
+    --green:#5CD68A;
+    --blue:#5CA8FF;
+    --paper:#F2EDE2;       /* field notes clipboard */
+    --paperink:#2A2A26;
+    --mono:ui-monospace,'SF Mono','Cascadia Code',Consolas,'Roboto Mono',monospace;
+    --sans:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100%}
+  body{padding:0 0 60px}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+
+  /* top status bar */
+  .hud{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0A0F15 0%,#0E141B 100%);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  .hud-in{max-width:760px;margin:0 auto;padding:10px 16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .hud b{color:var(--amber);font-weight:600}
+  .hud .sla-warn{color:var(--red)}
+  .led{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .led.g{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .led.a{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+  .led.r{background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 1.1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.led.r{animation:none}}
+
+  h1.logo{font-family:var(--mono);font-size:22px;letter-spacing:.18em;color:var(--amber);margin:18px 0 2px}
+  .tagline{color:var(--dim);font-size:13px;margin-bottom:18px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin:14px 0}
+  .card h2{font-size:13px;font-family:var(--mono);letter-spacing:.14em;color:var(--dim);text-transform:uppercase;margin-bottom:12px}
+  .card h3{font-size:15px;margin-bottom:6px}
+  p{line-height:1.55;font-size:14px}
+  .dim{color:var(--dim)}
+  .mono{font-family:var(--mono)}
+  .sm{font-size:12px}
+
+  button{font-family:var(--sans);font-size:14px;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:10px 14px;text-align:left;width:100%;margin:6px 0;transition:border-color .12s, background .12s;line-height:1.45}
+  button:hover{border-color:var(--amber)}
+  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  button.primary{background:var(--amber);color:#1A1206;border-color:var(--amber);font-weight:600;text-align:center}
+  button.primary:hover{background:#FFC273}
+  button.ghost{background:transparent;text-align:center}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button .cost{float:right;color:var(--dim);font-family:var(--mono);font-size:12px}
+  button.done{border-color:var(--green);color:var(--dim)}
+
+  .ticket{border-left:4px solid var(--line);padding-left:12px;margin:10px 0;cursor:pointer;background:var(--panel2);border-radius:0 6px 6px 0;padding:12px 12px 12px 14px;border-top:1px solid var(--line);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .ticket:hover{border-left-color:var(--amber)}
+  .ticket.p1{border-left-color:var(--red)}
+  .ticket.p2{border-left-color:var(--amber)}
+  .ticket.p3{border-left-color:var(--blue)}
+  .ticket.closed{opacity:.4;cursor:default}
+  .sev{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:3px;margin-right:8px}
+  .sev.p1{background:#3A1418;color:var(--red)}
+  .sev.p2{background:#3A2D14;color:var(--amber)}
+  .sev.p3{background:#14253A;color:var(--blue)}
+
+  /* field notes clipboard */
+  .notes{background:var(--paper);color:var(--paperink);border-radius:8px;padding:18px;margin:14px 0;box-shadow:0 4px 18px rgba(0,0,0,.45);position:relative}
+  .notes:before{content:"";position:absolute;top:-9px;left:50%;transform:translateX(-50%);width:90px;height:18px;background:#9A9486;border-radius:4px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.25)}
+  .notes h2{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#6B6555;border-bottom:2px solid #C9C2B0;padding-bottom:8px;margin:6px 0 12px}
+  .notes p{color:var(--paperink)}
+  .notes .q{font-weight:600;margin:14px 0 6px;font-size:14px}
+  .notes button{background:#FFFDF7;border:1px solid #C9C2B0;color:var(--paperink)}
+  .notes button:hover{border-color:#8A6D2A;background:#FFF6DF}
+  .notes .picked{border-color:#8A6D2A;background:#FFF1CF;font-weight:600}
+  .notes .hint{font-size:12px;color:#6B6555;font-style:italic}
+
+  /* telemetry readout */
+  .tele{font-family:var(--mono);font-size:13px;background:#0A0F15;border:1px solid var(--line);border-radius:6px;padding:12px;white-space:pre-wrap;line-height:1.7;margin:10px 0;color:#9FD0A8}
+  .tele .al{color:var(--red)}
+  .tele .wn{color:var(--amber)}
+  .tele .ok{color:var(--green)}
+  .tele .lbl{color:var(--dim)}
+
+  .faceplate{margin:10px 0;display:block;width:100%;height:auto}
+
+  .chip{display:inline-block;font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:4px 9px;margin:3px 4px 3px 0;color:var(--dim)}
+  .chip.on{border-color:var(--amber);color:var(--amber)}
+
+  .scorebar{display:flex;align-items:center;gap:10px;margin:8px 0}
+  .scorebar .lbl{width:150px;font-size:13px;color:var(--dim)}
+  .scorebar .track{flex:1;height:10px;background:#0A0F15;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .scorebar .fill{height:100%;background:var(--amber)}
+  .scorebar .val{width:46px;text-align:right;font-family:var(--mono);font-size:13px}
+  .grade{font-family:var(--mono);font-size:42px;color:var(--amber);text-align:center;margin:8px 0}
+
+  .toast{font-size:13px;border-left:3px solid var(--amber);padding:8px 12px;background:var(--panel2);margin:10px 0;border-radius:0 6px 6px 0}
+  .toast.bad{border-left-color:var(--red)}
+  .toast.good{border-left-color:var(--green)}
+  ul.plain{list-style:none}
+  ul.plain li{padding:4px 0;font-size:14px}
+  .checkrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:6px;margin:6px 0;cursor:pointer;background:var(--panel2)}
+  .checkrow:hover{border-color:var(--amber)}
+  .checkrow input{width:16px;height:16px;accent-color:var(--amber)}
+  .checkrow span{font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="hud"><div class="hud-in" id="hud">
+  <span><span class="led g"></span>NOC LINK</span>
+  <span>TECH: <b>S. LUBIN</b></span>
+  <span id="hudClock">SHIFT 07:00</span>
+  <span id="hudSla"></span>
+  <span id="hudRep">REP <b>—</b></span>
+</div></div>
+
+<div class="wrap" id="app"></div>
+
+<script>
+/* ============================================================
+   SIGNAL DOWN — playable vertical slice
+   Phases: queue → notes(reasoning) → loadout → drive → safety
+           → site(diagnostics) → repair → closure → debrief
+   ============================================================ */
+
+const DEPOT = [
+  {id:'meter',  name:'Optical power meter + VFL'},
+  {id:'scope',  name:'Fiber inspection scope + one-click cleaner'},
+  {id:'optic',  name:'Spare CWDM 1550nm SFP (LR)'},
+  {id:'patch',  name:'LC-LC single-mode patch cords (x2)'},
+  {id:'otdr',   name:'OTDR'},
+  {id:'dmm',    name:'Digital multimeter'},
+  {id:'rect',   name:'Spare rectifier module (-48VDC)'},
+  {id:'fuses',  name:'DC fuses + breakers kit'},
+  {id:'loto',   name:'Lockout-tagout kit + arc-flash gloves'},
+  {id:'sitemstr',name:'Anritsu Site Master (VSWR/DTF)'},
+  {id:'weather', name:'Weatherproofing kit (butyl + tape)'},
+  {id:'console', name:'Console cable + laptop'},
+];
+const MAX_LOADOUT = 6;
+
+/* ---------- Scenario data ---------- */
+const SCENARIOS = {
+  A:{
+    site:'eNB 3317 — Rosemont Rooftop', sev:'P2', sla:180,
+    queue:'Sector Alpha degraded — Ethernet link flapping toward hub. Alarm: "Ethernet Link Fault — intermittent." 6,200 subs degraded.',
+    brief:'Backhaul: dark fiber 3 km to hub, CWDM mux both ends, 1550nm channel into a Cisco edge at the hub. Ticket history: HVAC contractor on this roof Tuesday.',
+    remote:'<span class="lbl">PING SITE ROUTER..</span> <span class="ok">REPLY — 9ms, 4% loss</span>\n<span class="lbl">LINK STATE LOG....</span> <span class="wn">17 flaps / 60 min</span>\n<span class="lbl">RING NEIGHBOURS...</span> <span class="ok">CLEAN</span>',
+    notes:[
+      {q:'Q1 — The link is flapping, not hard-down. What failure class does that point to?',
+       opts:[
+        {t:'A marginal / degraded path — something barely inside the link budget',ok:2,fb:'Right. Flapping means the link lives on the edge: dirty connector, macro-bend, or a dying optic.'},
+        {t:'A clean fiber break somewhere on the 3 km run',ok:0,fb:'A clean break gives a hard-down, not flapping. You\'d see zero light, not intermittent loss.'},
+        {t:'A configuration mismatch on the backhaul VLAN',ok:0,fb:'Config faults don\'t flap with time-of-day randomness — they fail consistently. Light budget problems flap.'}]},
+      {q:'Q2 — Contractor was on the roof Tuesday. Rank your top suspect.',
+       opts:[
+        {t:'Disturbed connector at the patch panel — contamination or bad re-mate',ok:2,fb:'Good instinct. Recent site activity is the #1 predictor. Cheap, common, and matches the symptom.'},
+        {t:'Failing optic on the site end',ok:1,fb:'Plausible and worth carrying a spare — but recent contractor work should outrank random optic death.'},
+        {t:'Far-end Cisco edge port failing at the hub',ok:0,fb:'Possible, but you\'d roll 3 km the wrong direction on the least likely suspect. Check the near end first.'}]},
+      {q:'Q3 — First diagnostic move on site?',
+       opts:[
+        {t:'Meter RX light level at the site end before touching anything',ok:2,fb:'Correct. One reading splits the problem in half: low light = upstream path, good light = local optic/port.'},
+        {t:'Swap the optic immediately — they\'re cheap',ok:0,fb:'Shotgun part-swapping. If light is low, a new optic changes nothing and you\'ve destroyed your evidence.'},
+        {t:'Run a full OTDR shot from the hub end first',ok:1,fb:'Valid but heavy — that\'s a 40-minute setup for what a 2-minute light reading might tell you.'}]}
+    ],
+    needTools:['meter','scope'],
+    bonusTools:['optic','patch'],
+    inspections:[
+      {id:'alarms', t:'Console in — read alarm log', min:5,
+       out:'<span class="lbl">ALARM HISTORY (60m)</span>\n<span class="wn">ETH LINK FAULT — INTERMITTENT  x17</span>\n<span class="lbl">SECTOR ALPHA......</span> <span class="wn">DEGRADED — carrying partial traffic</span>'},
+      {id:'light', t:'Meter RX light level at site end', min:8, needs:'meter',
+       out:'<span class="lbl">RX @ SITE END.....</span> <span class="al">-21.3 dBm</span>\n<span class="lbl">SENSITIVITY FLOOR.</span> -16.0 dBm\n<span class="lbl">EXPECTED RANGE....</span> -8 to -14 dBm\n\n<span class="wn">>> 7+ dB missing from the budget. Problem is UPSTREAM of this optic.</span>', key:true},
+      {id:'inspect', t:'Inspection scope on panel-side connector', min:6, needs:'scope',
+       out:'<span class="lbl">CONNECTOR ENDFACE.</span> <span class="al">CONTAMINATED — oil film + debris in core zone</span>\n<span class="wn">>> Consistent with a bare-finger re-mate. Contractor signature.</span>', key:true},
+      {id:'otdr', t:'OTDR shot from site end', min:25, needs:'otdr',
+       out:'<span class="lbl">OTDR TRACE 1550nm.</span> No discrete loss events found on span.\n<span class="lbl">VERDICT...........</span> <span class="wn">Loss is at/near the connector — inside the OTDR dead zone. 25 min spent confirming what the scope shows in 6.</span>'}
+    ],
+    repairs:[
+      {t:'Clean both endfaces, re-mate, re-meter', min:10, needs:'scope', grade:2,
+       res:'<span class="lbl">RX AFTER CLEAN....</span> <span class="ok">-11.2 dBm — IN SPEC</span>\n<span class="lbl">LINK STATE........</span> <span class="ok">STABLE 15 min, zero flaps</span>\n<span class="lbl">SECTOR ALPHA......</span> <span class="ok">FULL TRAFFIC</span>',
+       fb:'Root cause fixed with a $2 cleaning tip. This is the difference between a tech and a parts-swapper.'},
+      {t:'Swap the site-end optic with the spare', min:15, needs:'optic', grade:1,
+       res:'<span class="lbl">RX AFTER SWAP.....</span> <span class="al">-20.9 dBm — still failing</span>\n<span class="wn">>> New optic, same dirt. The loss was never in the optic.</span>',
+       fb:'The light reading already told you the problem was upstream. Evidence ignored = time burned.', retry:true},
+      {t:'Re-terminate the panel-side fiber', min:45, needs:'patch', grade:1,
+       res:'<span class="lbl">RX AFTER RE-TERM..</span> <span class="ok">-11.8 dBm — IN SPEC</span>',
+       fb:'It works — but you spent 45 minutes splicing what a 10-minute clean would have fixed. Heavy hands, light score.'},
+      {t:'Escalate to transport team — hub-side issue', min:30, grade:0,
+       res:'<span class="lbl">TRANSPORT TEAM....</span> <span class="al">Hub end checks clean. Ticket bounced back to you. +30 min, -1 favor with transport.</span>',
+       fb:'You escalated your own dirty connector. Transport will remember this.', retry:true}
+    ],
+    safetyItems:['RF exposure check before crossing the antenna plane','Rooftop edge awareness — stay inside parapet line','Verify roof access authorization with building security'],
+    rootcause:'Contaminated connector at the rooftop patch panel following contractor HVAC work Tuesday.'
+  },
+
+  B:{
+    site:'eNB 4412 — Anjou Industrial', sev:'P1', sla:120,
+    queue:'SITE DOWN — all three sectors unavailable. Alarm: "eNB Unavailable." 38,000 subs dark. Enterprise SLA customer on site.',
+    brief:'Standalone monopole compound. -48VDC plant: 4x rectifier modules, battery string (rated 4h), genset with ATS. Backhaul over a protected ring.',
+    remote:'<span class="lbl">PING SITE ROUTER..</span> <span class="al">TIMEOUT — UNREACHABLE</span>\n<span class="lbl">UTILITY OUTAGE MAP</span> <span class="ok">NO OUTAGE in grid sector</span>\n<span class="lbl">RING NEIGHBOURS...</span> <span class="ok">ALL CLEAN — fiber ring healthy</span>',
+    notes:[
+      {q:'Q1 — All three sectors dropped at once. What does simultaneous failure tell you?',
+       opts:[
+        {t:'Common-cause failure: power, baseband, or transport — not radio',ok:2,fb:'Exactly. Three sectors never die together from RF problems. Find the shared dependency.'},
+        {t:'Three simultaneous RRU failures',ok:0,fb:'The odds of three independent RRU deaths in the same second are lottery-ticket territory.'},
+        {t:'Mass interference event across all sectors',ok:0,fb:'Interference degrades — it doesn\'t make an eNB report "Unavailable."'}]},
+      {q:'Q2 — Router unreachable, no utility outage, ring is clean. Top suspect?',
+       opts:[
+        {t:'On-site power failure — rectifier plant or site-side AC feed',ok:2,fb:'Right. Transport is alive (ring clean), grid is alive, but the site is dark — power died between the meter and the rack.'},
+        {t:'Fiber cut on the access span',ok:0,fb:'Ring is protected and neighbours are clean. A cut would alarm the transport layer, and the router would still have local power.'},
+        {t:'Baseband software crash',ok:1,fb:'Possible — but a crashed baseband doesn\'t take the site router off the network. Unreachable router points below the baseband: power.'}]},
+      {q:'Q3 — Before rolling the truck, what did checking the utility map and ring buy you?',
+       opts:[
+        {t:'It eliminated two whole failure classes from the driver\'s seat — now I roll with the right parts',ok:2,fb:'This is the move. Five minutes of remote checks beats an hour of driving to the wrong layer.'},
+        {t:'Nothing — P1 means you roll immediately, diagnose on site',ok:0,fb:'Rolling blind on a P1 is how you arrive without the rectifier module and double the outage.'},
+        {t:'It confirms I should go to the hub, not the cell site',ok:0,fb:'Backwards — the ring being clean is exactly why the hub is NOT the problem.'}]}
+    ],
+    needTools:['dmm','rect','loto'],
+    bonusTools:['fuses','console'],
+    inspections:[
+      {id:'plant', t:'Open the DC plant — visual + LED check', min:6,
+       out:'<span class="lbl">RECTIFIER 1.......</span> <span class="ok">GREEN</span>\n<span class="lbl">RECTIFIER 2.......</span> <span class="al">DARK</span>\n<span class="lbl">RECTIFIER 3.......</span> <span class="al">DARK</span>\n<span class="lbl">RECTIFIER 4.......</span> <span class="ok">GREEN</span>\n<span class="lbl">AC FEED B BREAKER.</span> <span class="al">TRIPPED</span>\n<span class="lbl">BATTERY STRING....</span> <span class="wn">46.1 V — sagging, ~70 min left</span>', key:true},
+      {id:'dmm', t:'Meter the AC feeds and DC bus', min:8, needs:'dmm',
+       out:'<span class="lbl">AC FEED A.........</span> <span class="ok">239 VAC</span>\n<span class="lbl">AC FEED B.........</span> <span class="al">0 VAC downstream of tripped breaker</span>\n<span class="lbl">DC BUS............</span> <span class="wn">-46.1 V (spec -54.2 V float)</span>\n\n<span class="wn">>> Feed B breaker tripped; rectifier 3 measures dead-short on input — IT tripped the breaker. Rect 2 dropped when the bus sagged.</span>', key:true},
+      {id:'gen', t:'Check the genset and ATS', min:10,
+       out:'<span class="lbl">GENSET............</span> <span class="wn">Failed auto-start — ATS never called: AC Feed A still live, so no transfer condition. Genset is not your problem today.</span>'},
+      {id:'logs', t:'Console into baseband (if it boots)', min:8, needs:'console',
+       out:'<span class="lbl">BASEBAND..........</span> <span class="al">No response — unit is below minimum bus voltage. Nothing to read until power is restored.</span>'}
+    ],
+    repairs:[
+      {t:'LOTO the plant → pull rectifier 3 (the shorted one) → reset Feed B breaker → install spare rectifier', min:25, needs:'rect', needsAlso:'loto', grade:2,
+       res:'<span class="lbl">DC BUS............</span> <span class="ok">-54.2 V FLOAT</span>\n<span class="lbl">RECTIFIERS........</span> <span class="ok">4/4 GREEN (incl. spare)</span>\n<span class="lbl">BASEBAND BOOT.....</span> <span class="ok">eNB UP — 3/3 sectors carrying traffic</span>\n<span class="lbl">BATTERY...........</span> <span class="ok">RECHARGING</span>',
+       fb:'Textbook. Found the shorted module, cleared it before resetting the breaker, restored float voltage. Site lives.'},
+      {t:'Just reset the Feed B breaker and see what happens', min:5, grade:0,
+       res:'<span class="al">>> BREAKER TRIPS AGAIN IN 4 SECONDS. The shorted rectifier is still on the feed. You knew this from the DMM reading.</span>',
+       fb:'Resetting a breaker into a dead short. The meter already told you why it tripped.', retry:true},
+      {t:'Swap the baseband — it\'s not responding', min:40, grade:0,
+       res:'<span class="al">>> New baseband, same dead bus. A baseband can\'t boot at 46 V no matter how new it is. -40 min, battery now at 30 min.</span>',
+       fb:'You replaced the victim, not the cause. Power first, always.', retry:true}
+    ],
+    safetyItems:['Lockout-tagout the DC plant before touching modules','Arc-flash gloves on before opening the AC feed panel','Verify battery string is isolated before pulling rectifiers'],
+    safetyCritical:true,
+    rootcause:'Rectifier module 3 failed shorted, tripping AC Feed B; bus sagged below baseband minimum voltage.'
+  },
+
+  C:{
+    site:'eNB 2209 — Griffintown Monopole', sev:'P3', sla:480,
+    queue:'Sector Beta return-loss alarm. Alarm: "RF Cable Connection Issue — VSWR threshold exceeded." RRU folding back TX power. 3,100 subs degraded.',
+    brief:'45 m monopole. Sector Beta: Radio 4449 RRU at height, jumpers to panel antenna. Your climb authorization: ground + first platform (10 m) only.',
+    remote:'<span class="lbl">RRU TX POWER......</span> <span class="wn">FOLDED BACK to 60% — self-protection</span>\n<span class="lbl">VSWR REPORTED.....</span> <span class="al">1.92:1 (threshold 1.5:1)</span>\n<span class="lbl">WEATHER HISTORY...</span> Heavy rain + freeze cycle last weekend',
+    notes:[
+      {q:'Q1 — VSWR alarm with TX foldback. What layer is faulting?',
+       opts:[
+        {t:'The antenna line — connector, jumper, or antenna itself reflecting power back',ok:2,fb:'Correct. VSWR is a physical-layer reflection problem. Software and transport are irrelevant here.'},
+        {t:'Baseband misconfiguration on Sector Beta',ok:0,fb:'Config can\'t create reflected RF power. VSWR is physics, not parameters.'},
+        {t:'Backhaul congestion causing the alarm',ok:0,fb:'Backhaul has nothing to do with return loss on the antenna line.'}]},
+      {q:'Q2 — Rain then freeze last weekend. What\'s the classic failure that produces?',
+       opts:[
+        {t:'Water ingress at a jumper connector — bad weatherproofing lets water in, ice expands it',ok:2,fb:'The classic. Water + freeze cycle at a poorly wrapped connector is the #1 VSWR generator in this climate.'},
+        {t:'The RRU itself failed',ok:1,fb:'Possible, but RRUs reporting VSWR are usually telling the truth about the line, not lying about themselves.'},
+        {t:'Antenna panel cracked from ice load',ok:1,fb:'Happens, but far rarer than connector ingress. Sweep first, speculate second.'}]},
+      {q:'Q3 — What does a Site Master sweep give you that the RRU alarm doesn\'t?',
+       opts:[
+        {t:'Distance-to-fault — it tells me WHERE on the line the reflection is, which decides who fixes it',ok:2,fb:'Exactly. DTF is the whole game: below 10 m it\'s yours, above 10 m it\'s a tower crew booking.'},
+        {t:'Nothing — the RRU already confirmed VSWR is bad',ok:0,fb:'The RRU says THAT it\'s bad. The sweep says WHERE. Without DTF you can\'t even write the tower crew scope.'},
+        {t:'It proves whether the alarm is false',ok:1,fb:'Partly — but the real value is localization, not confirmation.'}]}
+    ],
+    needTools:['sitemstr','weather'],
+    bonusTools:['console'],
+    inspections:[
+      {id:'sweep', t:'Disconnect at RRU port, sweep line with Site Master (DTF)', min:15, needs:'sitemstr',
+       out:'<span class="lbl">RETURN LOSS.......</span> <span class="al">9.8 dB (spec >18 dB)</span>\n<span class="lbl">DISTANCE-TO-FAULT.</span> <span class="al">42.3 m — top jumper, at the antenna connector</span>\n\n<span class="wn">>> The fault is 32 m above your climb authorization.</span>', key:true},
+      {id:'ground', t:'Inspect ground-level connectors and grounding kit', min:10,
+       out:'<span class="lbl">GROUND CONNECTORS.</span> <span class="ok">CLEAN — wrap intact, no ingress</span>\n<span class="lbl">GROUND KITS.......</span> <span class="ok">BONDED</span>\n<span class="wn">>> Confirms the problem is up top, not at your level.</span>'},
+      {id:'logs', t:'Pull RRU VSWR history from baseband', min:8, needs:'console',
+       out:'<span class="lbl">VSWR TREND (7d)...</span> 1.31 → 1.44 → <span class="al">1.92 after Saturday\'s freeze</span>\n<span class="wn">>> Step-change after the weather event. Ingress signature, not gradual corrosion.</span>'}
+    ],
+    repairs:[
+      {t:'Document sweep + photos, book tower crew with DTF scope, weatherproof reachable connectors while here', min:20, needs:'weather', grade:2,
+       res:'<span class="lbl">TOWER CREW........</span> <span class="ok">BOOKED — Thursday AM, scope: top jumper replacement @ 42m, re-weatherproof</span>\n<span class="lbl">INTERIM...........</span> <span class="ok">RRU foldback holding sector at 60% — degraded but alive</span>\n<span class="lbl">NOC...............</span> <span class="ok">Ticket converted to scheduled work, SLA paused</span>',
+       fb:'The senior move. You can\'t fix it from the ground — but a precise DTF scope means the crew climbs once, with the right jumper, and it\'s done in an hour.'},
+      {t:'Climb past your authorization — it\'s just one connector', min:60, grade:-1,
+       res:'<span class="al">>> SAFETY VIOLATION — STOP WORK. Site camera flagged an unauthorized climb. Supervisor en route. Shift ended.</span>',
+       fb:'No ticket is worth a 42-meter fall or your certification. This is the one hard fail in the job.', fatal:true},
+      {t:'Swap the baseband to clear the alarm', min:40, grade:0,
+       res:'<span class="al">>> Alarm returns in 90 seconds. The reflection is on the tower; the baseband is just the messenger.</span>',
+       fb:'Shooting the messenger. VSWR lives in copper and ice, not in software.', retry:true},
+      {t:'Acknowledge the alarm and close the ticket — sector still works at 60%', min:5, grade:0,
+       res:'<span class="al">>> Ticket reopens in 3 days as a P2 when the connector fails completely. "Repeat offender" flag added to site.</span>',
+       fb:'Deferred pain with interest. The freeze cycle isn\'t finished with that connector.', retry:true}
+    ],
+    safetyItems:['Harness + hardware inspection before any platform access','RF monitor badge on before approaching sector plane','Confirm RRU TX is locked before disconnecting the jumper'],
+    rootcause:'Water ingress at the top jumper-to-antenna connector (42 m) following rain/freeze cycle; tower crew dispatch required.'
+  }
+};
+
+/* ---------- Game state ---------- */
+let G = {
+  phase:'intro', current:null, clock:420, /* minutes since 0:00 -> 07:00 */
+  ticketsDone:{}, queueOrderPicked:[],
+  S:{eff:0,acc:0,saf:0,sat:0,doc:0,n:0},
+  // per-ticket transient:
+  T:null
+};
+function freshT(key){
+  return {key, sc:SCENARIOS[key], usedMin:0, accPts:0, accMax:0, loadout:[], notesIdx:0,
+          safetyChecked:[], inspected:[], keyFound:0, nocUpdated:false, retries:0, safetyFail:false, returnTrip:false};
+}
+const $ = s=>document.querySelector(s);
+function fmtClock(m){const h=Math.floor(m/60)%24,mm=m%60;return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');}
+function hud(){
+  let sla='';
+  if(G.T){const rem=G.T.sc.sla-G.T.usedMin;sla=`SLA <b class="${rem<30?'sla-warn':''}">${rem>0?rem+'m':'BREACHED'}</b>`;}
+  const rep=G.S.n? Math.round((G.S.eff+G.S.acc+G.S.saf+G.S.sat+G.S.doc)/G.S.n) : '—';
+  $('#hud').innerHTML=`<span><span class="led ${G.T?'r':'g'}"></span>${G.T?'TICKET ACTIVE':'NOC LINK'}</span>
+  <span>TECH: <b>S. LUBIN</b></span><span>SHIFT ${fmtClock(G.clock)}</span><span>${sla}</span><span>REP <b>${rep}</b></span>`;
+}
+function spend(min){G.T.usedMin+=min;G.clock+=min;hud();}
+function render(html){$('#app').innerHTML=html;window.scrollTo({top:0});hud();}
+
+/* ---------- Screens ---------- */
+function intro(){
+  render(`
+  <h1 class="logo">SIGNAL DOWN</h1>
+  <div class="tagline">Metro field tech simulator — vertical slice · YUL Metro Region</div>
+  <div class="card">
+    <h2>Shift Briefing</h2>
+    <p>You're the on-call wireless field tech for the metro region. Three tickets are live. The game scores your <b>reasoning before your wrench</b> — you'll commit to hypotheses in your Field Notes before any repair unlocks, and a lucky guess scores worse than a clean diagnosis.</p>
+    <p class="dim sm" style="margin-top:8px">Five axes: Efficiency · Accuracy · Safety · Satisfaction · Documentation. Soft fails everywhere except safety. Work all three tickets to close the shift.</p>
+    <button class="primary" onclick="queue()">Clock in — 07:00</button>
+  </div>`);
+}
+window.queue=function(){
+  G.phase='queue';G.T=null;
+  const keys=['B','A','C']; // displayed mixed; B is the P1
+  const open=keys.filter(k=>!G.ticketsDone[k]);
+  if(open.length===0)return shiftEnd();
+  render(`
+  <h1 class="logo">TICKET QUEUE</h1>
+  <div class="tagline">${open.length} open · pick your next move — triage is scored</div>
+  ${keys.map(k=>{const s=SCENARIOS[k];const done=G.ticketsDone[k];
+    return `<div class="ticket ${s.sev.toLowerCase()} ${done?'closed':''}" ${done?'':`onclick="pick('${k}')"`}>
+      <span class="sev ${s.sev.toLowerCase()}">${s.sev}</span><b>${s.site}</b>${done?' <span class="mono sm dim">— CLOSED</span>':''}
+      <p class="dim sm" style="margin-top:6px">${s.queue}</p>
+      <p class="mono sm" style="margin-top:4px;color:var(--dim)">SLA budget: ${s.sla} min</p>
+    </div>`;}).join('')}`);
+};
+window.pick=function(k){
+  G.queueOrderPicked.push(k);
+  G.T=freshT(k);
+  // triage scoring: picking non-P1 while P1 open costs satisfaction
+  G.T.triagePenalty = (k!=='B' && !G.ticketsDone['B']) ? 15 : 0;
+  remoteScreen();
+};
+function remoteScreen(){
+  const s=G.T.sc;
+  render(`
+  <h1 class="logo">${s.site}</h1>
+  <div class="tagline"><span class="sev ${s.sev.toLowerCase()}">${s.sev}</span> SLA ${s.sla} min ${G.T.triagePenalty?'<span class="mono sm" style="color:var(--red)"> · P1 STILL OPEN — NOC notes your choice</span>':''}</div>
+  <div class="card"><h2>Ticket</h2><p>${s.queue}</p><p class="dim sm" style="margin-top:8px">${s.brief}</p></div>
+  <div class="card"><h2>Remote checks — from the depot laptop (free, do them)</h2>
+    <div class="tele">${s.remote}</div>
+  </div>
+  <button class="primary" onclick="notesScreen()">Open Field Notes — commit your reasoning</button>`);
+}
+window.notesScreen=function(){
+  const s=G.T.sc, i=G.T.notesIdx, q=s.notes[i];
+  render(`
+  <div class="notes">
+    <h2>Field Notes — Reasoning Gate · ${i+1} of ${s.notes.length}</h2>
+    <p class="hint">Nothing unlocks until you commit. The score reads this page, not just the outcome.</p>
+    <p class="q">${q.q}</p>
+    ${q.opts.map((o,j)=>`<button onclick="answer(${j})">${o.t}</button>`).join('')}
+  </div>`);
+};
+window.answer=function(j){
+  const s=G.T.sc, i=G.T.notesIdx, o=s.notes[i].opts[j];
+  G.T.accPts+=o.ok; G.T.accMax+=2;
+  const cls=o.ok===2?'good':(o.ok===1?'':'bad');
+  render(`
+  <div class="notes">
+    <h2>Field Notes — Reasoning Gate · ${i+1} of ${s.notes.length}</h2>
+    <p class="q">${s.notes[i].q}</p>
+    <button class="picked" disabled>${o.t}</button>
+    <div class="toast ${cls}" style="background:#FFFDF7;border-radius:0 6px 6px 0">${o.fb}</div>
+    <button onclick="nextNote()" style="text-align:center;font-weight:600">${i+1<s.notes.length?'Next question':'Reasoning committed — go to the depot'}</button>
+  </div>`);
+};
+window.nextNote=function(){
+  G.T.notesIdx++;
+  if(G.T.notesIdx<G.T.sc.notes.length)notesScreen();else loadout();
+};
+function loadout(){
+  const L=G.T.loadout;
+  render(`
+  <h1 class="logo">DEPOT — LOADOUT</h1>
+  <div class="tagline">Pick up to ${MAX_LOADOUT}. Missing the right tool on site = return trip (45 min). Pack against your hypothesis.</div>
+  <div class="card">
+    ${DEPOT.map(d=>`<button class="${L.includes(d.id)?'done':''}" onclick="tog('${d.id}')">${L.includes(d.id)?'☑':'☐'} ${d.name}</button>`).join('')}
+    <p class="mono sm dim" style="margin-top:8px">${L.length}/${MAX_LOADOUT} slots used</p>
+    <button class="primary" onclick="drive()" ${L.length===0?'disabled':''}>Load the truck — roll out</button>
+  </div>`);
+}
+window.tog=function(id){
+  const L=G.T.loadout;
+  if(L.includes(id))G.T.loadout=L.filter(x=>x!==id);
+  else if(L.length<MAX_LOADOUT)L.push(id);
+  loadout();
+};
+window.drive=function(){
+  render(`
+  <h1 class="logo">EN ROUTE</h1>
+  <div class="tagline">${G.T.sc.site}</div>
+  <div class="card"><h2>Route choice</h2>
+    <button onclick="arrive(20,'Highway was clear. 20 minutes door to gate.')">Highway 40 — fastest if traffic holds <span class="cost">~20–45 min</span></button>
+    <button onclick="arrive(30,'Surface streets, steady and predictable. 30 minutes.')">Surface streets — slower, no variance <span class="cost">30 min</span></button>
+  </div>`);
+};
+window.arrive=function(base,msg){
+  let t=base;
+  if(base===20 && Math.random()<0.35){t=45;msg='Collision on the 40. You sat in it. 45 minutes burned.';}
+  spend(t);
+  render(`
+  <h1 class="logo">ON SITE — ${G.T.sc.site}</h1>
+  <div class="toast">${msg}</div>
+  <div class="card"><h2>Safety checklist — before touching anything</h2>
+    <p class="dim sm" style="margin-bottom:8px">Each check costs 2 min. Skipping is faster. The score notices either way.</p>
+    ${G.T.sc.safetyItems.map((it,i)=>`<label class="checkrow"><input type="checkbox" id="saf${i}"><span>${it}</span></label>`).join('')}
+    <button class="primary" onclick="enterSite()">Proceed to equipment</button>
+  </div>`);
+};
+window.enterSite=function(){
+  const items=G.T.sc.safetyItems;
+  G.T.safetyChecked=items.map((_,i)=>$('#saf'+i).checked);
+  spend(G.T.safetyChecked.filter(Boolean).length*2);
+  site();
+};
+function site(){
+  const s=G.T.sc, T=G.T;
+  const haveAllKey = s.inspections.filter(x=>x.key).every(x=>T.inspected.includes(x.id));
+  render(`
+  <h1 class="logo">${s.site}</h1>
+  <div class="tagline">Diagnostics — every action costs minutes. The data is the answer.</div>
+  ${faceplate(T.key)}
+  <div class="card"><h2>Inspect</h2>
+    ${s.inspections.map(ins=>{
+      const done=T.inspected.includes(ins.id);
+      const missing=ins.needs && !T.loadout.includes(ins.needs);
+      return `<button class="${done?'done':''}" onclick="inspect('${ins.id}')" ${done?'disabled':''}>
+        ${done?'✓ ':''}${ins.t}${missing?' <span class="cost" style="color:var(--red)">tool not in truck</span>':`<span class="cost">${ins.min} min</span>`}
+      </button>`;}).join('')}
+  </div>
+  <div id="teleout"></div>
+  <div class="card"><h2>Actions</h2>
+    ${T.nocUpdated?'<p class="sm dim mono">✓ NOC updated with ETA</p>':'<button onclick="nocUpdate()">Call NOC — give status + honest ETA <span class="cost">3 min · satisfaction</span></button>'}
+    <button class="primary" onclick="repairScreen()" ${T.inspected.length===0?'disabled':''}>Commit to a repair${haveAllKey?'':' (more data might help…)'}</button>
+  </div>`);
+  // re-render previous tele outputs
+  $('#teleout').innerHTML = T.inspected.map(id=>{
+    const ins=s.inspections.find(x=>x.id===id);
+    return `<div class="card"><h2>${ins.t}</h2><div class="tele">${ins.out}</div></div>`;
+  }).join('');
+}
+window.inspect=function(id){
+  const s=G.T.sc, ins=s.inspections.find(x=>x.id===id);
+  if(ins.needs && !G.T.loadout.includes(ins.needs)){
+    render(`
+    <h1 class="logo">MISSING KIT</h1>
+    <div class="card"><h2>${ins.t}</h2>
+      <p>The tool for this isn't in the truck. You packed against a hypothesis — this wasn't part of it.</p>
+      <button onclick="returnTrip('${id}')">Drive back to the depot for it <span class="cost">45 min</span></button>
+      <button class="ghost" onclick="site()">Work with what you have</button>
+    </div>`);
+    return;
+  }
+  spend(ins.min);
+  G.T.inspected.push(id);
+  if(ins.key)G.T.keyFound++;
+  site();
+};
+window.returnTrip=function(id){
+  const ins=G.T.sc.inspections.find(x=>x.id===id);
+  spend(45);G.T.returnTrip=true;G.T.loadout.push(ins.needs);
+  spend(ins.min);G.T.inspected.push(id);if(ins.key)G.T.keyFound++;
+  site();
+};
+window.nocUpdate=function(){spend(3);G.T.nocUpdated=true;site();};
+window.repairScreen=function(){
+  const s=G.T.sc;
+  render(`
+  <h1 class="logo">COMMIT TO A FIX</h1>
+  <div class="tagline">${s.site} · this is the decision the whole ticket was building to</div>
+  <div class="card">
+    ${s.repairs.map((r,i)=>{
+      const missing=(r.needs&&!G.T.loadout.includes(r.needs))||(r.needsAlso&&!G.T.loadout.includes(r.needsAlso));
+      return `<button onclick="doRepair(${i})">${r.t}${missing?' <span class="cost" style="color:var(--red)">missing kit — return trip</span>':`<span class="cost">${r.min} min</span>`}</button>`;
+    }).join('')}
+  </div>`);
+};
+window.doRepair=function(i){
+  const s=G.T.sc, r=s.repairs[i];
+  const missing=(r.needs&&!G.T.loadout.includes(r.needs))||(r.needsAlso&&!G.T.loadout.includes(r.needsAlso));
+  if(missing){
+    render(`
+    <h1 class="logo">MISSING KIT</h1>
+    <div class="card"><h2>${r.t}</h2>
+      <p>You don't have the kit for that fix in the truck.</p>
+      <button onclick="repairAfterTrip(${i})">Return trip to depot, then do it <span class="cost">45 min + ${r.min} min</span></button>
+      <button class="ghost" onclick="repairScreen()">Pick a different fix</button>
+    </div>`);
+    return;
+  }
+  execRepair(i);
+};
+window.repairAfterTrip=function(i){
+  const r=G.T.sc.repairs[i];
+  spend(45);G.T.returnTrip=true;
+  if(r.needs&&!G.T.loadout.includes(r.needs))G.T.loadout.push(r.needs);
+  if(r.needsAlso&&!G.T.loadout.includes(r.needsAlso))G.T.loadout.push(r.needsAlso);
+  execRepair(i);
+};
+window.execRepair=function(i){
+  const s=G.T.sc, r=s.repairs[i];
+  spend(r.min);
+  if(r.fatal){G.T.safetyFail=true;return closure(r,true);}
+  if(r.retry){
+    G.T.retries++;
+    render(`
+    <h1 class="logo">RESULT</h1>
+    <div class="card"><div class="tele">${r.res}</div></div>
+    <div class="toast bad">${r.fb}</div>
+    <button class="primary" onclick="repairScreen()">Back to it — pick another approach</button>
+    <button class="ghost" onclick="site()">Re-inspect first</button>`);
+    return;
+  }
+  G.T.repairGrade=r.grade;
+  closure(r,false);
+};
+function closure(r,fatal){
+  if(fatal){
+    render(`
+    <h1 class="logo">STOP WORK</h1>
+    <div class="card"><div class="tele">${r.res}</div></div>
+    <div class="toast bad">${r.fb}</div>
+    <button class="primary" onclick="finalize(0)">Face the debrief</button>`);
+    return;
+  }
+  render(`
+  <h1 class="logo">VERIFY & CLOSE</h1>
+  <div class="card"><div class="tele">${r.res}</div></div>
+  <div class="toast ${r.grade===2?'good':''}">${r.fb}</div>
+  <div class="notes">
+    <h2>Closure notes — choose your documentation tier</h2>
+    <button onclick="finalize(2)"><b>Thorough:</b> root cause, readings before/after, parts used, contractor flag, follow-up recommendation <span class="cost" style="color:#6B6555">8 min</span></button>
+    <button onclick="finalize(1)"><b>Adequate:</b> "Replaced/cleaned faulty component, alarms clear" <span class="cost" style="color:#6B6555">3 min</span></button>
+    <button onclick="finalize(0)"><b>Minimal:</b> "fixed" <span class="cost" style="color:#6B6555">1 min</span></button>
+  </div>`);
+}
+window.finalize=function(docTier){
+  const T=G.T,s=T.sc;
+  spend(docTier===2?8:docTier===1?3:1);
+  // ----- scoring -----
+  const slaRem=s.sla-T.usedMin;
+  let eff=Math.max(0,Math.min(100,Math.round(100*slaRem/s.sla)+30));eff=Math.min(100,eff);
+  if(T.returnTrip)eff=Math.max(0,eff-20);
+  if(T.retries)eff=Math.max(0,eff-12*T.retries);
+  let acc=Math.round(100*T.accPts/T.accMax);
+  acc=Math.round(acc*0.6 + (T.repairGrade===2?40:T.repairGrade===1?18:0));
+  if(T.retries)acc=Math.max(0,acc-10*T.retries);
+  const keyTotal=s.inspections.filter(x=>x.key).length;
+  if(T.keyFound===keyTotal)acc=Math.min(100,acc+8);
+  let saf=Math.round(100*T.safetyChecked.filter(Boolean).length/T.safetyChecked.length);
+  if(s.safetyCritical && !T.safetyChecked[0])saf=Math.min(saf,25);
+  if(T.safetyFail)saf=0;
+  let sat=70 + (T.nocUpdated?20:0) - (T.triagePenalty||0) - (slaRem<0?25:0) - (T.retries*8);
+  sat=Math.max(0,Math.min(100,sat));
+  let doc=docTier===2?100:docTier===1?60:20;
+  if(T.safetyFail){eff=Math.min(eff,20);acc=Math.min(acc,30);sat=Math.min(sat,20);}
+  G.S.eff+=eff;G.S.acc+=acc;G.S.saf+=saf;G.S.sat+=sat;G.S.doc+=doc;G.S.n++;
+  G.ticketsDone[T.key]={eff,acc,saf,sat,doc};
+  const overall=Math.round(eff*.25+acc*.3+saf*.2+sat*.15+doc*.1);
+  const grade=T.safetyFail?'F':overall>=90?'A':overall>=78?'B':overall>=62?'C':overall>=45?'D':'F';
+  const sup=T.safetyFail?'"My office. Now."':
+    grade==='A'?'"Clean diagnosis, clean hands. This is the standard."':
+    grade==='B'?'"Solid work. Tighten the loose minutes and you\'re top tier."':
+    grade==='C'?'"Got there in the end. The site doesn\'t care how — but I do."':
+    '"We need to talk about your troubleshooting order."';
+  render(`
+  <h1 class="logo">TICKET DEBRIEF</h1>
+  <div class="tagline">${s.site} · root cause: ${s.rootcause}</div>
+  <div class="card">
+    <div class="grade">${grade}</div>
+    ${bar('Efficiency',eff)}${bar('Accuracy',acc)}${bar('Safety',saf)}${bar('Satisfaction',sat)}${bar('Documentation',doc)}
+    <p class="sm dim" style="margin-top:10px">Time used: <span class="mono">${T.usedMin} min</span> against a <span class="mono">${s.sla} min</span> SLA${slaRem<0?' — <span style="color:var(--red)">BREACHED</span>':''}</p>
+    <div class="toast" style="margin-top:12px">Supervisor: ${sup}</div>
+    <button class="primary" onclick="queue()">Back to the queue</button>
+  </div>`);
+};
+function bar(lbl,v){return `<div class="scorebar"><div class="lbl">${lbl}</div><div class="track"><div class="fill" style="width:${v}%;background:${v>=78?'var(--green)':v>=50?'var(--amber)':'var(--red)'}"></div></div><div class="val">${v}</div></div>`;}
+function shiftEnd(){
+  const n=G.S.n;
+  const avg=k=>Math.round(G.S[k]/n);
+  const rep=Math.round((G.S.eff+G.S.acc+G.S.saf+G.S.sat+G.S.doc)/n/5*5)/1;
+  const overall=Math.round((avg('eff')*.25+avg('acc')*.3+avg('saf')*.2+avg('sat')*.15+avg('doc')*.1));
+  render(`
+  <h1 class="logo">END OF SHIFT</h1>
+  <div class="tagline">All tickets closed · ${fmtClock(G.clock)}</div>
+  <div class="card">
+    <h2>Shift averages — ${n} tickets</h2>
+    ${bar('Efficiency',avg('eff'))}${bar('Accuracy',avg('acc'))}${bar('Safety',avg('saf'))}${bar('Satisfaction',avg('sat'))}${bar('Documentation',avg('doc'))}
+    <div class="grade">${overall>=90?'A':overall>=78?'B':overall>=62?'C':overall>=45?'D':'F'}</div>
+    <p class="dim sm" style="text-align:center">Technician reputation: ${overall} — ${overall>=85?'DWDM turn-ups and commissioning windows unlock next shift.':overall>=65?'Steady hands. Senior tickets within reach.':'The queue forgives. The chronic sites don\'t.'}</p>
+    <button class="primary" onclick="reset()">Run the shift again</button>
+  </div>`);
+}
+window.reset=function(){G={phase:'intro',current:null,clock:420,ticketsDone:{},queueOrderPicked:[],S:{eff:0,acc:0,saf:0,sat:0,doc:0,n:0},T:null};intro();};
+
+/* ---------- SVG equipment faceplate (signature element) ---------- */
+function faceplate(key){
+  if(key==='A')return svgPanel([
+    {x:30,c:'#5CD68A',l:'PWR'},{x:90,c:'#FF5C5C',l:'LNK',blink:true},{x:150,c:'#FFB454',l:'ALM'},
+  ],'CELL SITE ROUTER — PORT 0/1 · CWDM 1550','FIBER PATCH PANEL — POS 7/8');
+  if(key==='B')return svgPanel([
+    {x:30,c:'#5CD68A',l:'R1'},{x:90,c:'#2B3A4A',l:'R2'},{x:150,c:'#2B3A4A',l:'R3'},{x:210,c:'#5CD68A',l:'R4'},{x:300,c:'#FF5C5C',l:'BUS',blink:true},
+  ],'-48VDC RECTIFIER PLANT','BATTERY STRING · AC FEEDS A/B');
+  return svgPanel([
+    {x:30,c:'#5CD68A',l:'PWR'},{x:90,c:'#FFB454',l:'VSWR',blink:true},{x:150,c:'#FFB454',l:'TXFB'},
+  ],'RADIO 4449 — SECTOR β (REMOTE STATUS)','MONOPOLE 45m · CLIMB AUTH: 10m');
+}
+function svgPanel(leds,t1,t2){
+  return `<svg class="faceplate" viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="equipment status panel">
+  <rect x="2" y="2" width="696" height="116" rx="8" fill="#161B22" stroke="#2B3A4A"/>
+  <rect x="14" y="14" width="672" height="60" rx="4" fill="#0A0F15" stroke="#2B3A4A"/>
+  ${leds.map(L=>`
+    <circle cx="${L.x+20}" cy="38" r="7" fill="${L.c}" ${L.c!=='#2B3A4A'?`filter="url(#g)"`:''}>${L.blink?'<animate attributeName="opacity" values="1;.2;1" dur="1.1s" repeatCount="indefinite"/>':''}</circle>
+    <text x="${L.x+20}" y="62" text-anchor="middle" font-family="monospace" font-size="10" fill="#7E8FA0">${L.l}</text>`).join('')}
+  <defs><filter id="g"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  <text x="16" y="94" font-family="monospace" font-size="11" fill="#D7E1EA">${t1}</text>
+  <text x="16" y="110" font-family="monospace" font-size="10" fill="#7E8FA0">${t2}</text>
+</svg>`;
+}
+
+intro();
+</script>
+</body>
+</html>
